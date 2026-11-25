@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
 Pulls every DEP idling-charge row from NYC's OATH Hearings Division Case Status dataset
-(jz4z-kudi on data.cityofnewyork.us) and writes a trimmed, gzipped JSON snapshot to
-idling_violations.json.gz.
+(jz4z-kudi on data.cityofnewyork.us) and writes a trimmed JSON snapshot, raw-deflate-compressed,
+to idling_violations.json.deflate.
+
+Raw deflate (zlib.compressobj with wbits=-15), not .gz: Apple's Compression framework decodes
+raw deflate directly (`(data as NSData).decompressed(using: .zlib)`) with no header-stripping
+code needed on the Swift side. A real gzip file has an extra 10-byte header + 8-byte trailer
+that framework doesn't understand, so producing actual gzip here would just mean writing that
+parsing by hand in Swift for no benefit.
 
 Why this filter: a complaint only counts as a "prior" under 15 RCNY 43-01(5) if it's a DEP
 §24-163 idling finding. Pulling just that subset (instead of the full ~2.9M-row OATH dataset)
@@ -15,7 +21,7 @@ one-off Claude+web-search lookup only when a company isn't already in Alex's own
 and FMCSA can't find it either (see CompanyDirectory.swift).
 """
 import json
-import gzip
+import zlib
 import subprocess
 import sys
 import time
@@ -85,10 +91,14 @@ def main():
         if len(page) < PAGE_SIZE:
             break
 
-    with gzip.open("idling_violations.json.gz", "wt", encoding="utf-8") as f:
-        json.dump(rows, f, separators=(",", ":"))
+    raw = json.dumps(rows, separators=(",", ":")).encode("utf-8")
+    compressor = zlib.compressobj(9, zlib.DEFLATED, -15)
+    compressed = compressor.compress(raw) + compressor.flush()
+    with open("idling_violations.json.deflate", "wb") as f:
+        f.write(compressed)
 
-    print(f"Wrote {len(rows)} rows to idling_violations.json.gz")
+    print(f"Wrote {len(rows)} rows ({len(raw)} bytes raw, {len(compressed)} bytes compressed) "
+          f"to idling_violations.json.deflate")
 
 
 if __name__ == "__main__":
