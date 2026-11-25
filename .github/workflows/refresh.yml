@@ -1,0 +1,26 @@
+name: Refresh idling violations snapshot
+
+on:
+  schedule:
+    # NYC Open Data's own bulk sync for this dataset runs roughly once a day — matching that
+    # cadence means this snapshot is never meaningfully staler than the live API would be.
+    - cron: "0 11 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch latest snapshot
+        run: python3 scripts/fetch.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add idling_violations.json.gz
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "Refresh idling violations snapshot"
+          git push
